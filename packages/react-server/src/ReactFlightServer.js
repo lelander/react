@@ -121,6 +121,10 @@ import {getOwnerStackByComponentInfoInDev} from 'shared/ReactComponentInfoStack'
 import {resetOwnerStackLimit} from 'shared/ReactOwnerStackReset';
 
 import noop from 'shared/noop';
+import {
+  getTemporalTypeCode,
+  serializeTemporal,
+} from 'shared/ReactFlightTemporal';
 
 import {
   callComponentInDEV,
@@ -2980,45 +2984,6 @@ function serializeDateFromDateJSON(dateJSON: string): string {
   // JSON.stringify automatically calls Date.prototype.toJSON which calls toISOString.
   // We need only tack on a $D prefix.
   return '$D' + dateJSON;
-}
-
-// The 1-character codes used to distinguish the Temporal.* types on the wire.
-// These must be kept in sync with the decoder in ReactFlightClient as well as the
-// encoder/decoder in the Reply files. Temporal values all serialize to RFC 9557
-// strings via their toJSON method (like Date), but unlike Date their string forms
-// overlap (Temporal.Instant looks just like a Date, Temporal.PlainDate is a prefix
-// of Temporal.PlainDateTime, etc.) so we have to carry the concrete type explicitly.
-const temporalTypeCodes: {+[tag: string]: string} = {
-  'Temporal.Instant': 'I',
-  'Temporal.ZonedDateTime': 'Z',
-  'Temporal.PlainDate': 'd',
-  'Temporal.PlainDateTime': 'D',
-  'Temporal.PlainTime': 't',
-  'Temporal.PlainYearMonth': 'y',
-  'Temporal.PlainMonthDay': 'm',
-  'Temporal.Duration': 'u',
-};
-
-function getTemporalTypeCode(value: mixed): void | string {
-  // Temporal objects expose a spec-defined Symbol.toStringTag ("Temporal.PlainDate",
-  // etc.) on both the native implementation and the standard polyfills, so we can
-  // detect them structurally without depending on a Temporal implementation being
-  // loaded here.
-  if (value === null || typeof value !== 'object') {
-    return undefined;
-  }
-  const tag = (value: any)[Symbol.toStringTag];
-  if (typeof tag === 'string') {
-    return temporalTypeCodes[tag];
-  }
-  return undefined;
-}
-
-function serializeTemporal(typeCode: string, temporalJSON: string): string {
-  // Like Date, a Temporal value is turned into a string by its toJSON method. We
-  // tack on a '$t' prefix plus the 1-character type code so the client can call
-  // the matching Temporal.<Type>.from() to reconstruct it.
-  return '$t' + typeCode + temporalJSON;
 }
 
 function serializeBigInt(n: bigint): string {

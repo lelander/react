@@ -47,7 +47,7 @@ export function getTemporalTypeCode(value: mixed): void | string {
   if (value === null || typeof value !== 'object') {
     return undefined;
   }
-  const tag = (value: any)[Symbol.toStringTag];
+  const tag = (value as any)[Symbol.toStringTag];
   if (typeof tag === 'string') {
     return temporalCodesByTag[tag];
   }
@@ -66,7 +66,7 @@ export function serializeTemporal(
 
 export function parseTemporalValue(value: string): mixed {
   // value is '$t' + a 1-character type code + the RFC 9557 string from toJSON.
-  const Temporal = (globalThis: any).Temporal;
+  const Temporal = (globalThis as any).Temporal;
   if (Temporal == null) {
     throw new Error(
       'A Temporal value was received but no Temporal implementation is available ' +

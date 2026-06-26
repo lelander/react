@@ -3991,7 +3991,7 @@ function renderModelDestructive(
     // as an instance before its toJSON has been applied.
     const topLevelTemporalCode = getTemporalTypeCode(value);
     if (topLevelTemporalCode !== undefined) {
-      return serializeTemporal(topLevelTemporalCode, (value: any).toJSON());
+      return serializeTemporal(topLevelTemporalCode, (value as any).toJSON());
     }
 
     // Verify that this is a simple plain object.
@@ -5161,7 +5161,7 @@ function renderDebugModel(
     }
     const temporalTypeCode = getTemporalTypeCode(value);
     if (temporalTypeCode !== undefined) {
-      return serializeTemporal(temporalTypeCode, (value: any).toJSON());
+      return serializeTemporal(temporalTypeCode, (value as any).toJSON());
     }
     if (value instanceof Map) {
       return serializeDebugMap(request, counter, value);

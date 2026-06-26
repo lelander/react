@@ -148,6 +148,41 @@ function serializeDateFromDateJSON(dateJSON: string): string {
   return '$D' + dateJSON;
 }
 
+// The 1-character codes used to distinguish the Temporal.* types on the wire. Kept
+// in sync with the decoder in ReactFlightReplyServer (and ReactFlightServer /
+// ReactFlightClient for the other direction). See ReactFlightServer for details on
+// why the concrete type has to be carried explicitly.
+const temporalTypeCodes: {+[tag: string]: string} = {
+  'Temporal.Instant': 'I',
+  'Temporal.ZonedDateTime': 'Z',
+  'Temporal.PlainDate': 'd',
+  'Temporal.PlainDateTime': 'D',
+  'Temporal.PlainTime': 't',
+  'Temporal.PlainYearMonth': 'y',
+  'Temporal.PlainMonthDay': 'm',
+  'Temporal.Duration': 'u',
+};
+
+function getTemporalTypeCode(value: mixed): void | string {
+  // Detect Temporal.* values via their spec-defined Symbol.toStringTag, which is
+  // present on both the native implementation and the standard polyfills, so we
+  // don't depend on a Temporal implementation being loaded here.
+  if (value === null || typeof value !== 'object') {
+    return undefined;
+  }
+  const tag = (value: any)[Symbol.toStringTag];
+  if (typeof tag === 'string') {
+    return temporalTypeCodes[tag];
+  }
+  return undefined;
+}
+
+function serializeTemporal(typeCode: string, temporalJSON: string): string {
+  // Like Date, a Temporal value is turned into a string by its toJSON method. We
+  // tack on a '$t' prefix plus the 1-character type code.
+  return '$t' + typeCode + temporalJSON;
+}
+
 function serializeBigInt(n: bigint): string {
   return '$n' + n.toString(10);
 }
@@ -390,7 +425,8 @@ export function processReply(
       if (
         typeof originalValue === 'object' &&
         originalValue !== value &&
-        !(originalValue instanceof Date)
+        !(originalValue instanceof Date) &&
+        getTemporalTypeCode(originalValue) === undefined
       ) {
         if (objectName(originalValue) !== 'Object') {
           console.error(
@@ -794,6 +830,13 @@ export function processReply(
         if (originalValue instanceof Date) {
           return serializeDateFromDateJSON(value);
         }
+      }
+      // Temporal.* values are also stringified by their toJSON method but don't
+      // all end in "Z", so detect them via the recovered original value.
+      // $FlowFixMe[incompatible-use]
+      const temporalTypeCode = getTemporalTypeCode(parent[key]);
+      if (temporalTypeCode !== undefined) {
+        return serializeTemporal(temporalTypeCode, value);
       }
 
       return escapeStringValue(value);

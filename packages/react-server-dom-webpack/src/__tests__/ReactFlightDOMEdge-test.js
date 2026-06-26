@@ -43,6 +43,47 @@ function normalizeSerializedContent(str) {
   return str.replaceAll(__REACT_ROOT_PATH_TEST__, '**');
 }
 
+// A minimal Temporal implementation, sufficient to exercise the Flight wire format
+// without depending on native Temporal or a polyfill being installed. Each type
+// carries the spec-defined Symbol.toStringTag, a toJSON that returns its stored
+// RFC 9557 string, and a static from() that round-trips it.
+function createTemporalStub() {
+  function makeTemporalType(name) {
+    class TemporalType {
+      constructor(isoString) {
+        this.isoString = isoString;
+      }
+      toJSON() {
+        return this.isoString;
+      }
+      toString() {
+        return this.isoString;
+      }
+      static from(value) {
+        return new TemporalType(
+          typeof value === 'string' ? value : value.isoString,
+        );
+      }
+    }
+    Object.defineProperty(TemporalType.prototype, Symbol.toStringTag, {
+      value: 'Temporal.' + name,
+      configurable: true,
+    });
+    Object.defineProperty(TemporalType, 'name', {value: name});
+    return TemporalType;
+  }
+  return {
+    Instant: makeTemporalType('Instant'),
+    ZonedDateTime: makeTemporalType('ZonedDateTime'),
+    PlainDate: makeTemporalType('PlainDate'),
+    PlainDateTime: makeTemporalType('PlainDateTime'),
+    PlainTime: makeTemporalType('PlainTime'),
+    PlainYearMonth: makeTemporalType('PlainYearMonth'),
+    PlainMonthDay: makeTemporalType('PlainMonthDay'),
+    Duration: makeTemporalType('Duration'),
+  };
+}
+
 describe('ReactFlightDOMEdge', () => {
   beforeEach(() => {
     // Mock performance.now for timing tests
@@ -540,6 +581,76 @@ describe('ReactFlightDOMEdge', () => {
     // Should still match the result when parsed
     expect(result.text).toBe(testString);
     expect(result.text2).toBe(testString2);
+  });
+
+  describe('Temporal', () => {
+    let originalTemporal;
+    beforeEach(() => {
+      originalTemporal = global.Temporal;
+      global.Temporal = createTemporalStub();
+    });
+    afterEach(() => {
+      global.Temporal = originalTemporal;
+    });
+
+    it('can pass Temporal values from the server to the client', async () => {
+      const Temporal = global.Temporal;
+      const model = {
+        instant: Temporal.Instant.from('2020-01-23T17:08:00Z'),
+        zoned: Temporal.ZonedDateTime.from(
+          '2020-01-23T17:08:00+01:00[Europe/Paris]',
+        ),
+        date: Temporal.PlainDate.from('2020-01-23'),
+        dateTime: Temporal.PlainDateTime.from('2020-01-23T17:08:00'),
+        time: Temporal.PlainTime.from('17:08:00'),
+        yearMonth: Temporal.PlainYearMonth.from('2020-01'),
+        monthDay: Temporal.PlainMonthDay.from('01-23'),
+        duration: Temporal.Duration.from('P1Y2M3DT4H5M6S'),
+      };
+
+      const stream = await serverAct(() =>
+        ReactServerDOMServer.renderToReadableStream(model),
+      );
+      const result = await ReactServerDOMClient.createFromReadableStream(
+        passThrough(stream),
+        {
+          serverConsumerManifest: {
+            moduleMap: null,
+            moduleLoading: null,
+          },
+        },
+      );
+
+      expect(result.instant instanceof Temporal.Instant).toBe(true);
+      expect(result.zoned instanceof Temporal.ZonedDateTime).toBe(true);
+      expect(result.date instanceof Temporal.PlainDate).toBe(true);
+      expect(result.dateTime instanceof Temporal.PlainDateTime).toBe(true);
+      expect(result.time instanceof Temporal.PlainTime).toBe(true);
+      expect(result.yearMonth instanceof Temporal.PlainYearMonth).toBe(true);
+      expect(result.monthDay instanceof Temporal.PlainMonthDay).toBe(true);
+      expect(result.duration instanceof Temporal.Duration).toBe(true);
+      for (const key in model) {
+        expect(result[key].toJSON()).toBe(model[key].toJSON());
+      }
+    });
+
+    it('can pass a Temporal value as the top-level model', async () => {
+      const date = global.Temporal.PlainDate.from('2020-01-23');
+      const stream = await serverAct(() =>
+        ReactServerDOMServer.renderToReadableStream(date),
+      );
+      const result = await ReactServerDOMClient.createFromReadableStream(
+        passThrough(stream),
+        {
+          serverConsumerManifest: {
+            moduleMap: null,
+            moduleLoading: null,
+          },
+        },
+      );
+      expect(result instanceof global.Temporal.PlainDate).toBe(true);
+      expect(result.toJSON()).toBe('2020-01-23');
+    });
   });
 
   it('should encode repeated objects in a compact format by deduping', async () => {

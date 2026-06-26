@@ -2383,6 +2383,36 @@ function getInferredFunctionApproximate(code: string): () => void {
   return function () {};
 }
 
+// Maps the 1-character Temporal subtype code (see temporalTypeCodes in
+// ReactFlightServer) to the Temporal constructor used to reconstruct the value.
+const temporalConstructorNames: {+[code: string]: string} = {
+  I: 'Instant',
+  Z: 'ZonedDateTime',
+  d: 'PlainDate',
+  D: 'PlainDateTime',
+  t: 'PlainTime',
+  y: 'PlainYearMonth',
+  m: 'PlainMonthDay',
+  u: 'Duration',
+};
+
+function parseTemporalString(value: string): mixed {
+  // value is "$t" + a 1-character type code + the RFC 9557 string from toJSON.
+  const Temporal = (globalThis: any).Temporal;
+  if (Temporal == null) {
+    throw new Error(
+      'A Temporal value was sent from the Server but no Temporal implementation ' +
+        'is available in this environment. Use a runtime with native Temporal ' +
+        'support, or load a Temporal polyfill that defines globalThis.Temporal.',
+    );
+  }
+  const constructorName = temporalConstructorNames[value[2]];
+  if (constructorName === undefined) {
+    throw new Error('Unknown Temporal type code "' + value[2] + '".');
+  }
+  return Temporal[constructorName].from(value.slice(3));
+}
+
 function parseModelString(
   response: Response,
   parentObject: Object,
@@ -2546,6 +2576,10 @@ function parseModelString(
       case 'D': {
         // Date
         return new Date(Date.parse(value.slice(2)));
+      }
+      case 't': {
+        // Temporal
+        return parseTemporalString(value);
       }
       case 'n': {
         // BigInt

@@ -36,6 +36,7 @@ import {writeTemporaryReference} from './ReactFlightTemporaryReferences';
 
 import isArray from 'shared/isArray';
 import getPrototypeOf from 'shared/getPrototypeOf';
+import {getTemporalTag} from 'shared/ReactFlightTemporal';
 
 const ObjectPrototype = Object.prototype;
 
@@ -146,6 +147,12 @@ function serializeDateFromDateJSON(dateJSON: string): string {
   // JSON.stringify automatically calls Date.prototype.toJSON which calls toISOString.
   // We need only tack on a $D prefix.
   return '$D' + dateJSON;
+}
+
+function serializeTemporal(tag: string, temporalJSON: string): string {
+  // Temporal values serialize to their lossless ISO 8601 / RFC 9557 form via
+  // toJSON. We tack on a $t prefix plus a character identifying the type.
+  return '$t' + tag + temporalJSON;
 }
 
 function serializeBigInt(n: bigint): string {
@@ -390,7 +397,8 @@ export function processReply(
       if (
         typeof originalValue === 'object' &&
         originalValue !== value &&
-        !(originalValue instanceof Date)
+        !(originalValue instanceof Date) &&
+        getTemporalTag(originalValue) === null
       ) {
         if (objectName(originalValue) !== 'Object') {
           console.error(
@@ -787,12 +795,27 @@ export function processReply(
 
     if (typeof value === 'string') {
       // TODO: Maybe too clever. If we support URL there's no similar trick.
-      if (value[value.length - 1] === 'Z') {
-        // Possibly a Date, whose toJSON automatically calls toISOString
+      const firstCharCode = value.charCodeAt(0);
+      if (
+        (firstCharCode >= 48 && firstCharCode <= 57) /* 0-9 */ ||
+        firstCharCode === 43 /* + */ ||
+        firstCharCode === 45 /* - */ ||
+        firstCharCode === 80 /* P */
+      ) {
+        // Possibly a Date or Temporal value, whose toJSON was applied before
+        // we saw it. Date's toJSON calls toISOString which starts with a digit
+        // or a sign, and every Temporal toJSON starts with a digit, a sign or
+        // "P".
         // $FlowFixMe[incompatible-use]
         const originalValue = parent[key];
-        if (originalValue instanceof Date) {
-          return serializeDateFromDateJSON(value);
+        if (typeof originalValue === 'object' && originalValue !== null) {
+          if (originalValue instanceof Date) {
+            return serializeDateFromDateJSON(value);
+          }
+          const temporalTag = getTemporalTag(originalValue);
+          if (temporalTag !== null) {
+            return serializeTemporal(temporalTag, value);
+          }
         }
       }
 

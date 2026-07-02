@@ -105,6 +105,7 @@ import {OMITTED_PROP_ERROR} from 'shared/ReactFlightPropertyAccess';
 import ReactVersion from 'shared/ReactVersion';
 
 import isArray from 'shared/isArray';
+import {createTemporalFromTag} from 'shared/ReactFlightTemporal';
 
 import * as React from 'react';
 
@@ -2546,6 +2547,10 @@ function parseModelString(
       case 'D': {
         // Date
         return new Date(Date.parse(value.slice(2)));
+      }
+      case 't': {
+        // Temporal
+        return createTemporalFromTag(value[2], value.slice(3));
       }
       case 'n': {
         // BigInt

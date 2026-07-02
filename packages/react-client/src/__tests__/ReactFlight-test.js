@@ -17,6 +17,10 @@ if (typeof File === 'undefined' || typeof FormData === 'undefined') {
   global.File = require('undici').File;
   global.FormData = require('undici').FormData;
 }
+if (typeof global.Temporal === 'undefined') {
+  global.Temporal = require('../../../../scripts/jest/TemporalMock')();
+}
+const Temporal = global.Temporal;
 
 function normalizeCodeLocInfo(str) {
   return (
@@ -546,6 +550,66 @@ describe('ReactFlight', () => {
     });
 
     expect(ReactNoop).toMatchRenderedOutput('prop: 2009-02-13T23:31:30.123Z');
+  });
+
+  it('can transport Temporal values', async () => {
+    function ComponentClient({prop}) {
+      return Object.keys(prop)
+        .map(
+          key => `${key}: ${prop[key][Symbol.toStringTag]} <${prop[key]}>`,
+        )
+        .join('\n');
+    }
+    const Component = clientReference(ComponentClient);
+
+    const model = (
+      <Component
+        prop={{
+          instant: Temporal.Instant.from('2009-02-13T23:31:30.123456789Z'),
+          zonedDateTime: Temporal.ZonedDateTime.from(
+            '2009-02-13T18:31:30.123-05:00[America/New_York]',
+          ),
+          plainDateTime: Temporal.PlainDateTime.from('2009-02-13T23:31:30'),
+          plainDate: Temporal.PlainDate.from('2009-02-13'),
+          plainTime: Temporal.PlainTime.from('23:31:30'),
+          plainYearMonth: Temporal.PlainYearMonth.from('2009-02'),
+          plainMonthDay: Temporal.PlainMonthDay.from('02-13'),
+          duration: Temporal.Duration.from('P1DT2H30M'),
+        }}
+      />
+    );
+
+    const transport = ReactNoopFlightServer.render(model);
+
+    await act(async () => {
+      ReactNoop.render(await ReactNoopFlightClient.read(transport));
+    });
+
+    expect(ReactNoop).toMatchRenderedOutput(
+      'instant: Temporal.Instant <2009-02-13T23:31:30.123456789Z>\n' +
+        'zonedDateTime: Temporal.ZonedDateTime ' +
+        '<2009-02-13T18:31:30.123-05:00[America/New_York]>\n' +
+        'plainDateTime: Temporal.PlainDateTime <2009-02-13T23:31:30>\n' +
+        'plainDate: Temporal.PlainDate <2009-02-13>\n' +
+        'plainTime: Temporal.PlainTime <23:31:30>\n' +
+        'plainYearMonth: Temporal.PlainYearMonth <2009-02>\n' +
+        'plainMonthDay: Temporal.PlainMonthDay <02-13>\n' +
+        'duration: Temporal.Duration <P1DT2H30M>',
+    );
+  });
+
+  it('can transport Temporal as a top-level value', async () => {
+    const instant = Temporal.Instant.from('2009-02-13T23:31:30.123456789Z');
+    const transport = ReactNoopFlightServer.render(instant);
+
+    let readValue;
+    await act(async () => {
+      readValue = await ReactNoopFlightClient.read(transport);
+    });
+
+    expect(readValue instanceof Temporal.Instant).toBe(true);
+    expect(readValue).not.toBe(instant);
+    expect(readValue.toString()).toBe('2009-02-13T23:31:30.123456789Z');
   });
 
   it('can transport Map', async () => {

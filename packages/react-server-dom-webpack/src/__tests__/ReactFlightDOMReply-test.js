@@ -16,6 +16,10 @@ global.ReadableStream =
   require('web-streams-polyfill/ponyfill/es6').ReadableStream;
 global.TextEncoder = require('util').TextEncoder;
 global.TextDecoder = require('util').TextDecoder;
+if (typeof global.Temporal === 'undefined') {
+  global.Temporal = require('../../../../scripts/jest/TemporalMock')();
+}
+const Temporal = global.Temporal;
 
 // let serverExports;
 let webpackServerMap;
@@ -243,6 +247,52 @@ describe('ReactFlightDOMReply', () => {
 
     expect(d).toEqual(d2);
     expect(d % 1000).toEqual(123); // double-check the milliseconds made it through
+  });
+
+  it('can pass Temporal values as a reply', async () => {
+    const value = {
+      instant: Temporal.Instant.from('2009-02-13T23:31:30.123456789Z'),
+      zonedDateTime: Temporal.ZonedDateTime.from(
+        '2009-02-13T18:31:30.123-05:00[America/New_York]',
+      ),
+      plainDateTime: Temporal.PlainDateTime.from('2009-02-13T23:31:30'),
+      plainDate: Temporal.PlainDate.from('2009-02-13'),
+      plainTime: Temporal.PlainTime.from('23:31:30'),
+      plainYearMonth: Temporal.PlainYearMonth.from('2009-02'),
+      plainMonthDay: Temporal.PlainMonthDay.from('02-13'),
+      duration: Temporal.Duration.from('P1DT2H30M'),
+    };
+    const body = await ReactServerDOMClient.encodeReply(value);
+    const value2 = await ReactServerDOMServer.decodeReply(
+      body,
+      webpackServerMap,
+    );
+
+    expect(value2.instant instanceof Temporal.Instant).toBe(true);
+    expect(value2.instant.toString()).toBe('2009-02-13T23:31:30.123456789Z');
+    expect(value2.zonedDateTime instanceof Temporal.ZonedDateTime).toBe(true);
+    expect(value2.zonedDateTime.toString()).toBe(
+      '2009-02-13T18:31:30.123-05:00[America/New_York]',
+    );
+    expect(value2.plainDateTime.toString()).toBe('2009-02-13T23:31:30');
+    expect(value2.plainDate.toString()).toBe('2009-02-13');
+    expect(value2.plainTime.toString()).toBe('23:31:30');
+    expect(value2.plainYearMonth.toString()).toBe('2009-02');
+    expect(value2.plainMonthDay.toString()).toBe('02-13');
+    expect(value2.duration instanceof Temporal.Duration).toBe(true);
+    expect(value2.duration.toString()).toBe('P1DT2H30M');
+  });
+
+  it('can pass a Temporal value as a top-level reply', async () => {
+    const duration = Temporal.Duration.from('P1DT2H30M');
+    const body = await ReactServerDOMClient.encodeReply(duration);
+    const duration2 = await ReactServerDOMServer.decodeReply(
+      body,
+      webpackServerMap,
+    );
+
+    expect(duration2 instanceof Temporal.Duration).toBe(true);
+    expect(duration2.toString()).toBe('P1DT2H30M');
   });
 
   it('can pass a Map as a reply', async () => {

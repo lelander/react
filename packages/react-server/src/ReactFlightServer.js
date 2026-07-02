@@ -154,6 +154,7 @@ import isArray from 'shared/isArray';
 import getPrototypeOf from 'shared/getPrototypeOf';
 import hasOwnProperty from 'shared/hasOwnProperty';
 import binaryToComparableString from 'shared/binaryToComparableString';
+import {getTemporalTag} from 'shared/ReactFlightTemporal';
 
 import {SuspenseException, getSuspendedThenable} from './ReactFlightThenable';
 
@@ -2817,7 +2818,8 @@ function resolveModel(
     if (
       typeof originalValue === 'object' &&
       originalValue !== jsonValue &&
-      !(originalValue instanceof Date)
+      !(originalValue instanceof Date) &&
+      getTemporalTag(originalValue) === null
     ) {
       // Call with the server component as the currently rendering component
       // for context.
@@ -2979,6 +2981,12 @@ function serializeDateFromDateJSON(dateJSON: string): string {
   // JSON.stringify automatically calls Date.prototype.toJSON which calls toISOString.
   // We need only tack on a $D prefix.
   return '$D' + dateJSON;
+}
+
+function serializeTemporal(tag: string, temporalJSON: string): string {
+  // Temporal values serialize to their lossless ISO 8601 / RFC 9557 form via
+  // toJSON. We tack on a $t prefix plus a character identifying the type.
+  return '$t' + tag + temporalJSON;
 }
 
 function serializeBigInt(n: bigint): string {
@@ -3983,6 +3991,14 @@ function renderModelDestructive(
       return serializeDate(value);
     }
 
+    // Like Date, Temporal values usually get serialized through their toJSON
+    // before we process them in this function, so this direct check is only
+    // hit for top-level and outlined values.
+    const temporalTag = getTemporalTag(value);
+    if (temporalTag !== null && typeof (value as any).toJSON === 'function') {
+      return serializeTemporal(temporalTag, (value as any).toJSON());
+    }
+
     // Verify that this is a simple plain object.
     const proto = getPrototypeOf(value);
     if (
@@ -4041,12 +4057,26 @@ function renderModelDestructive(
     }
     serializedSize += value.length;
     // TODO: Maybe too clever. If we support URL there's no similar trick.
-    if (value[value.length - 1] === 'Z') {
-      // Possibly a Date, whose toJSON automatically calls toISOString
+    const firstCharCode = value.charCodeAt(0);
+    if (
+      (firstCharCode >= 48 && firstCharCode <= 57) /* 0-9 */ ||
+      firstCharCode === 43 /* + */ ||
+      firstCharCode === 45 /* - */ ||
+      firstCharCode === 80 /* P */
+    ) {
+      // Possibly a Date or Temporal value, whose toJSON was applied before we
+      // saw it. Date's toJSON calls toISOString which starts with a digit or a
+      // sign, and every Temporal toJSON starts with a digit, a sign or "P".
       // $FlowFixMe[incompatible-use]
       const originalValue = parent[parentPropertyName];
-      if (originalValue instanceof Date) {
-        return serializeDateFromDateJSON(value);
+      if (typeof originalValue === 'object' && originalValue !== null) {
+        if (originalValue instanceof Date) {
+          return serializeDateFromDateJSON(value);
+        }
+        const temporalTag = getTemporalTag(originalValue);
+        if (temporalTag !== null) {
+          return serializeTemporal(temporalTag, value);
+        }
       }
     }
     // $FlowFixMe[invalid-compare]
@@ -5139,6 +5169,10 @@ function renderDebugModel(
 
     if (value instanceof Date) {
       return serializeDate(value);
+    }
+    const temporalTag = getTemporalTag(value);
+    if (temporalTag !== null && typeof (value as any).toJSON === 'function') {
+      return serializeTemporal(temporalTag, (value as any).toJSON());
     }
     if (value instanceof Map) {
       return serializeDebugMap(request, counter, value);

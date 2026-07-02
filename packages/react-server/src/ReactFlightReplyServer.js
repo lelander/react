@@ -46,6 +46,7 @@ import {ASYNC_ITERATOR} from 'shared/ReactSymbols';
 import hasOwnProperty from 'shared/hasOwnProperty';
 import getPrototypeOf from 'shared/getPrototypeOf';
 import isArray from 'shared/isArray';
+import {createTemporalFromTag} from 'shared/ReactFlightTemporal';
 
 interface FlightStreamController {
   enqueueModel(json: string): void;
@@ -1713,6 +1714,10 @@ function parseModelString(
       case 'D': {
         // Date
         return new Date(Date.parse(value.slice(2)));
+      }
+      case 't': {
+        // Temporal
+        return createTemporalFromTag(value[2], value.slice(3));
       }
       case 'n': {
         // BigInt

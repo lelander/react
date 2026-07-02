@@ -2808,8 +2808,13 @@ function resolveModel(
     // $FlowFixMe[method-unbinding]
     typeof value.toJSON === 'function'
   ) {
-    // $FlowFixMe[incompatible-use]
-    jsonValue = value.toJSON(parentPropertyName);
+    // Types with specialized serialization are handled here, before the
+    // generic toJSON call would erase what type of object this was.
+    const temporalTag = getTemporalTag(value);
+    if (temporalTag !== null) {
+      return serializeTemporal(temporalTag, (value as any).toJSON());
+    }
+    jsonValue = (value as any).toJSON(parentPropertyName);
   }
 
   if (__DEV__) {
@@ -2818,8 +2823,7 @@ function resolveModel(
     if (
       typeof originalValue === 'object' &&
       originalValue !== jsonValue &&
-      !(originalValue instanceof Date) &&
-      getTemporalTag(originalValue) === null
+      !(originalValue instanceof Date)
     ) {
       // Call with the server component as the currently rendering component
       // for context.
@@ -3991,9 +3995,9 @@ function renderModelDestructive(
       return serializeDate(value);
     }
 
-    // Like Date, Temporal values usually get serialized through their toJSON
-    // before we process them in this function, so this direct check is only
-    // hit for top-level and outlined values.
+    // Temporal values are usually intercepted in resolveModel before their
+    // toJSON is applied, so like Date this direct check is only hit when a
+    // value reaches this function without passing through resolveModel.
     const temporalTag = getTemporalTag(value);
     if (temporalTag !== null && typeof (value as any).toJSON === 'function') {
       return serializeTemporal(temporalTag, (value as any).toJSON());
@@ -4057,26 +4061,12 @@ function renderModelDestructive(
     }
     serializedSize += value.length;
     // TODO: Maybe too clever. If we support URL there's no similar trick.
-    const firstCharCode = value.charCodeAt(0);
-    if (
-      (firstCharCode >= 48 && firstCharCode <= 57) /* 0-9 */ ||
-      firstCharCode === 43 /* + */ ||
-      firstCharCode === 45 /* - */ ||
-      firstCharCode === 80 /* P */
-    ) {
-      // Possibly a Date or Temporal value, whose toJSON was applied before we
-      // saw it. Date's toJSON calls toISOString which starts with a digit or a
-      // sign, and every Temporal toJSON starts with a digit, a sign or "P".
+    if (value[value.length - 1] === 'Z') {
+      // Possibly a Date, whose toJSON automatically calls toISOString
       // $FlowFixMe[incompatible-use]
       const originalValue = parent[parentPropertyName];
-      if (typeof originalValue === 'object' && originalValue !== null) {
-        if (originalValue instanceof Date) {
-          return serializeDateFromDateJSON(value);
-        }
-        const temporalTag = getTemporalTag(originalValue);
-        if (temporalTag !== null) {
-          return serializeTemporal(temporalTag, value);
-        }
+      if (originalValue instanceof Date) {
+        return serializeDateFromDateJSON(value);
       }
     }
     // $FlowFixMe[invalid-compare]

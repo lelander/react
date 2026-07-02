@@ -52,7 +52,7 @@ export function getTemporalTag(object: Object): null | string {
 export function createTemporalFromTag(tag: string, data: string): mixed {
   // Read the global lazily since a polyfill may be installed after this
   // module is first evaluated.
-  const Temporal = (globalThis: any).Temporal;
+  const Temporal = (globalThis as any).Temporal;
   if (typeof Temporal === 'undefined') {
     throw new Error(
       'Could not deserialize a Temporal object because no global Temporal ' +

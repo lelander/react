@@ -556,7 +556,10 @@ describe('ReactFlight', () => {
     function ComponentClient({prop}) {
       return Object.keys(prop)
         .map(
-          key => `${key}: ${prop[key][Symbol.toStringTag]} <${prop[key]}>`,
+          // Explicit toString() because Temporal values throw on implicit
+          // string coercion.
+          key =>
+            `${key}: ${prop[key][Symbol.toStringTag]} <${prop[key].toString()}>`,
         )
         .join('\n');
     }
